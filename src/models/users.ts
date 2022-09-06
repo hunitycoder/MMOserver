@@ -14,6 +14,6 @@ export class Users {
   @Column({ nullable: false })
   password: string;
 
-  @Column()
+  @Column({ nullable: true })
   attributes: string;
 }
