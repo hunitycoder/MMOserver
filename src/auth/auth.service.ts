@@ -1,94 +1,64 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { UsersDTO } from './dto/users.dto';
-import { validate } from 'class-validator';
-import { JwtService } from '@nestjs/jwt';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Users } from '@models/users';
-import { Repository } from 'typeorm';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { UsersService } from '../users/users.service';
+import RegisterDto from './dto/register.dto';
 import * as bcrypt from 'bcrypt';
+import { PostgresErrorCode } from '../config/postgresErrorCodes.enum';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import TokenPayload from './tokenPayload.interface';
 
 @Injectable()
 export class AuthService {
-  private logger: Logger = new Logger('AuthService');
   constructor(
-    private jwtService: JwtService,
-    @InjectRepository(Users) private usersRepository: Repository<Users>,
+    private readonly usersService: UsersService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService
   ) {}
 
-  async login(user: any): Promise<Record<string, any>> {
-    // Validation Flag
-    let isOk = false;
-
-    // Transform body into DTO
-    const userDTO = new UsersDTO();
-    userDTO.email = user.email;
-    userDTO.password = user.password;
-
-    // Validate DTO against validate function from class-validator
-    await validate(userDTO).then((errors) => {
-      if (errors.length > 0) {
-        this.logger.debug(`${errors}`, AuthService.name);
-      } else {
-        isOk = true;
-      }
-    });
-
-    if (isOk) {
-      // Get user information
-      const userDetails = await this.usersRepository.findOne({
-        email: user.email,
+  public async register(registrationData: RegisterDto) {
+    const hashedPassword = await bcrypt.hash(registrationData.password, 10);
+    try {
+      const createdUser = await this.usersService.create({
+        ...registrationData,
+        password: hashedPassword
       });
-      if (userDetails == null) {
-        return { status: 401, msg: { msg: 'Invalid credentials' } };
+      createdUser.password = undefined;
+      return createdUser;
+    } catch (error) {
+      if (error?.code === PostgresErrorCode.UniqueViolation) {
+        throw new HttpException('User with that email already exists', HttpStatus.BAD_REQUEST);
       }
-
-      // Check if the given password match with saved password
-      const isValid = bcrypt.compareSync(user.password, userDetails.password);
-      if (isValid) {
-        return {
-          status: 200,
-          msg: {
-            email: user.email,
-            access_token: this.jwtService.sign({ email: user.email }),
-          },
-        };
-      } else {
-        return { status: 401, msg: { msg: 'Invalid credentials' } };
-      }
-    } else {
-      return { status: 400, msg: { msg: 'Invalid fields.' } };
+      throw new HttpException('Something went wrong', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
-  async createUser(body: any): Promise<Record<string, any>> {
-    // Validation Flag
-    let isOk = false;
+  public getCookieWithJwtToken(userId: number) {
+    const payload: TokenPayload = { userId };
+    const token = this.jwtService.sign(payload);
+    return `Authentication=${token}; HttpOnly; Path=/; Max-Age=${this.configService.get('JWT_EXPIRATION_TIME')}`;
+  }
 
-    // Transform body into DTO
-    const userDTO = new UsersDTO();
-    userDTO.email = body.email;
-    userDTO.password = bcrypt.hashSync(body.password, 10);
+  public getCookieForLogOut() {
+    return `Authentication=; HttpOnly; Path=/; Max-Age=0`;
+  }
 
-    // Validate DTO against validate function from class-validator
-    await validate(userDTO).then((errors) => {
-      if (errors.length > 0) {
-        this.logger.debug(`${errors}`, AuthService.name);
-      } else {
-        isOk = true;
-      }
-    });
-    if (isOk) {
-      await this.usersRepository.save(userDTO).catch((error) => {
-        this.logger.debug(error.message, AuthService.name);
-        isOk = false;
-      });
-      if (isOk) {
-        return { status: 201, content: { msg: `User created with success` } };
-      } else {
-        return { status: 400, content: { msg: 'User already exists' } };
-      }
-    } else {
-      return { status: 400, content: { msg: 'Invalid content' } };
+  public async getAuthenticatedUser(email: string, plainTextPassword: string) {
+    try {
+      const user = await this.usersService.getByEmail(email);
+      await this.verifyPassword(plainTextPassword, user.password);
+      return user;
+    } catch (error) {
+      throw new HttpException('Wrong credentials provided', HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  private async verifyPassword(plainTextPassword: string, hashedPassword: string) {
+    const isPasswordMatching = await bcrypt.compare(
+      plainTextPassword,
+      hashedPassword
+    );
+    if (!isPasswordMatching) {
+      throw new HttpException('Wrong credentials provided', HttpStatus.BAD_REQUEST);
     }
   }
 }

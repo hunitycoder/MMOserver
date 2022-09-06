@@ -2,7 +2,7 @@
   "name": "mmo-nest-server",
   "version": "0.0.2",
   "engines": {
-    "node": "16.6.1",
+    "node": "16.17.0",
     "npm": "7.20.3"
   },
   "description": "",
@@ -46,7 +46,7 @@
     "@nestjs/common": "^8.0.4",
     "@nestjs/config": "^1.0.0",
     "@nestjs/core": "^8.0.4",
-    "@nestjs/jwt": "^8.0.0",
+    "@nestjs/jwt": "^8.0.1",
     "@nestjs/passport": "^8.2.2",
     "@nestjs/platform-express": "^8.0.4",
     "@nestjs/platform-socket.io": "^8.4.7",
