@@ -1,64 +1,51 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { UsersService } from '../users/users.service';
-import RegisterDto from './dto/register.dto';
-import * as bcrypt from 'bcrypt';
-import { PostgresErrorCode } from '../config/postgresErrorCodes.enum';
+import { CreateUserDto } from '@api/users/dto/create-user.dto';
+import { User } from '@models/users';
+import { UsersService } from '@api/users/users.service';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
-import TokenPayload from './tokenPayload.interface';
+import { AuthDto } from './dto/auth.dto';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly usersService: UsersService,
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService
+    private usersService: UsersService,
+    private jwtService: JwtService,
   ) {}
 
-  public async register(registrationData: RegisterDto) {
-    const hashedPassword = await bcrypt.hash(registrationData.password, 10);
-    try {
-      const createdUser = await this.usersService.create({
-        ...registrationData,
-        password: hashedPassword
-      });
-      createdUser.password = undefined;
-      return createdUser;
-    } catch (error) {
-      if (error?.code === PostgresErrorCode.UniqueViolation) {
-        throw new HttpException('User with that email already exists', HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException('Something went wrong', HttpStatus.INTERNAL_SERVER_ERROR);
+  async registerUser(createUserDto: CreateUserDto) {
+    const user = await this.usersService.create(createUserDto);
+    return this.login(user);
+  }
+
+  async validateUser(email: string, pass: string): Promise<any> {
+    const user: User = await this.usersService.findByEmail(email);
+
+    if (user && (await user.comparePassword(pass))) {
+      const { password, ...result } = user;
+      return result;
     }
+
+    return null;
   }
 
-  public getCookieWithJwtToken(userId: number) {
-    const payload: TokenPayload = { userId };
-    const token = this.jwtService.sign(payload);
-    return `Authentication=${token}; HttpOnly; Path=/; Max-Age=${this.configService.get('JWT_EXPIRATION_TIME')}`;
+  async login(user: User) {
+    const payload = { username: user.username, sub: user.id };
+    return {
+      id: user.id,
+      access_token: this.jwtService.sign(payload),
+    };
   }
 
-  public getCookieForLogOut() {
-    return `Authentication=; HttpOnly; Path=/; Max-Age=0`;
-  }
-
-  public async getAuthenticatedUser(email: string, plainTextPassword: string) {
-    try {
-      const user = await this.usersService.getByEmail(email);
-      await this.verifyPassword(plainTextPassword, user.password);
-      return user;
-    } catch (error) {
-      throw new HttpException('Wrong credentials provided', HttpStatus.BAD_REQUEST);
+  async userLogin(authDto: AuthDto) {
+    const user = await this.validateUser(authDto.email, authDto.password);
+    if (!user) {
+      throw new UnauthorizedException();
     }
+    return await this.login(user);
   }
 
-  private async verifyPassword(plainTextPassword: string, hashedPassword: string) {
-    const isPasswordMatching = await bcrypt.compare(
-      plainTextPassword,
-      hashedPassword
-    );
-    if (!isPasswordMatching) {
-      throw new HttpException('Wrong credentials provided', HttpStatus.BAD_REQUEST);
-    }
+  async getAuthToken(user: User) {
+    const payload = { username: user.username, sub: user.id };
+    return this.jwtService.sign(payload);
   }
 }

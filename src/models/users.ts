@@ -1,12 +1,13 @@
-import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import { compare, hash } from 'bcrypt';
+import { Entity, Column, PrimaryGeneratedColumn, BeforeInsert, BeforeUpdate } from 'typeorm';
 
 @Entity('users')
-export class Users {
-  @PrimaryGeneratedColumn()
-  id?: number;
+export class User {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
   @Column()
-  name: string;
+  username: string;
 
   @Column({ nullable: false, unique: true })
   email: string;
@@ -15,5 +16,25 @@ export class Users {
   password: string;
 
   @Column({ nullable: true })
-  attributes: string;
+  attributeId: string;
+
+  newPassword?: string;
+
+  @BeforeInsert()
+  async hashPassWord() {
+    this.password = await hash(this.password, 10);
+  }
+
+  @BeforeUpdate()
+  async hashNewPassWord() {
+    if (!!this.newPassword) {
+      this.password = await hash(this.newPassword, 10);
+    }
+
+    delete this.newPassword;
+  }
+
+  comparePassword(passwordAttempt: string) {
+    return compare(passwordAttempt, this.password);
+  }
 }

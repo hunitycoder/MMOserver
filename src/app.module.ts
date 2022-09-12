@@ -9,6 +9,7 @@ import { AppGateway } from './app.gateway';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
+import { EmailModule } from './email/email.module';
 
 import * as Joi from '@hapi/joi';
 
@@ -35,6 +36,8 @@ import * as Joi from '@hapi/joi';
     AuthModule,
 
     ChatModule,
+
+    EmailModule,
   ],
   controllers: [AppController],
   providers: [AppService, AppGateway],

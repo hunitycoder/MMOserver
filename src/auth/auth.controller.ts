@@ -1,45 +1,92 @@
-import { Body, Req, Controller, HttpCode, Post, UseGuards, Res, Get } from '@nestjs/common';
-import { Response } from 'express';
+import {
+  Controller,
+  UseGuards,
+  Request,
+  Post,
+  Body,
+  ValidationPipe,
+  Patch,
+} from '@nestjs/common';
+import { ApiBody, ApiResponse, ApiTags } from '@nestjs/swagger';
+
+import { CreateUserDto } from '@api/users/dto/create-user.dto';
+import { UsersService } from '@api/users/users.service';
+import { LocalAuthGuard } from './local-auth.guard';
+import { AuthDto, AuthResponseDto } from './dto/auth.dto';
+import { SkipAuth } from '@decorators/rest';
 import { AuthService } from './auth.service';
-import RegisterDto from './dto/register.dto';
-import RequestWithUser from './requestWithUser.interface';
-import { LocalAuthenticationGuard } from './localAuthentication.guard';
-import JwtAuthenticationGuard from './jwt-authentication.guard';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { GetUser } from '@api/decorators/get.user.decorator';
+import { User } from '@api/models/users';
+import { EmailConfirmationService } from '@api/email/emailConfirmation.service';
+import { ResetPasswordService } from '@api/email/resetPassword.service';
+import ConfirmCodeDto from '@api/email/dto/confirmCode.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
-
+@SkipAuth()
 @Controller('auth')
+@ApiTags('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private usersService: UsersService,
+    private readonly emailConfirmationService: EmailConfirmationService,
+    private readonly resetPasswordService: ResetPasswordService,
+  ) {}
+
+  @Post('login')
+  @ApiResponse({ type: AuthResponseDto })
+  @ApiBody({ type: AuthDto })
+  async login(@Body() authDto: AuthDto) {
+    return this.authService.userLogin(authDto);
+  }
 
 
   @Post('register')
-  async register(@Body() registrationData: RegisterDto) {
-    return this.authService.register(registrationData);
+  async register(@Body() createUserDto: CreateUserDto) {
+    return this.authService.registerUser(createUserDto);
   }
 
-  @HttpCode(200)
-  @UseGuards(LocalAuthenticationGuard)
-  @Post('log-in')
-  async logIn(@Req() request: RequestWithUser, @Res() response: Response) {
-    const {user} = request;
-    const cookie = this.authService.getCookieWithJwtToken(user.id);
-    response.setHeader('Set-Cookie', cookie);
-    user.password = undefined;
-    return response.send(user);
+
+  @UseGuards(LocalAuthGuard)
+  @Post('token')
+  async getAuthToken(@Request() req, @Body() authDto: AuthDto) {
+    return this.authService.getAuthToken(req.user);
   }
 
-  @UseGuards(JwtAuthenticationGuard)
-  @Post('log-out')
-  async logOut(@Res() response: Response) {
-    response.setHeader('Set-Cookie', this.authService.getCookieForLogOut());
-    return response.sendStatus(200);
+  @Post('/forgotPassword')
+  async forgotPassword(
+    @Body(new ValidationPipe()) forgotPasswordDto: ForgotPasswordDto,
+  ) {
+    await this.resetPasswordService.sendCodeToEmail(forgotPasswordDto.email);
   }
 
-  @UseGuards(JwtAuthenticationGuard)
-  @Get()
-  authenticate(@Req() request: RequestWithUser) {
-    const user = request.user;
-    user.password = undefined;
-    return user;
+  @Patch('/confirmCode')
+  async confirmCode(
+    @Body(new ValidationPipe()) confirmCodeDto: ConfirmCodeDto,
+  ): Promise<boolean> {
+    return this.resetPasswordService.confirmCode(confirmCodeDto);
+  }
+
+  @Patch('/changePassword') // change password in mobile app
+  async changePassword(
+    @Body(new ValidationPipe()) changePasswordDto: ChangePasswordDto,
+  ): Promise<User> {
+    return this.usersService.updatePassword(
+      changePasswordDto.email,
+      changePasswordDto,
+    );
+  }
+
+  @Post('resetpassword') // reset password with email and token
+  @UseGuards(LocalAuthGuard)
+  async resetpassword(
+    @GetUser() user: User,
+    @Body(new ValidationPipe()) resetpasswordData: ChangePasswordDto,
+  ): Promise<User> {
+    return await this.resetPasswordService.resetPassword(
+      user.email,
+      resetpasswordData,
+    );
   }
 }
