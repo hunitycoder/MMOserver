@@ -1,5 +1,6 @@
 import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
+import { Transport, MicroserviceOptions } from '@nestjs/microservices';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { DatabaseErrorInterceptor } from './common/database-error.interceptor';
@@ -11,8 +12,23 @@ require('dotenv').config();
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-
+  // const app = await NestFactory.createMicroservice<MicroserviceOptions>(
+  //   AppModule,
+  //   {
+  //     transport: Transport.REDIS,
+  //     options: {
+  //       url: 'redis://localhost:6379',
+  //     },
+  //   },
+  // );
   // log requests, etc
+
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.TCP,
+    options: { retryAttempts: 5, retryDelay: 3000 },
+  });
+  await app.startAllMicroservices();
+
   app.use(logger);
   app.enableCors();
 

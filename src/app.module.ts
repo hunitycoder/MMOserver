@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { CacheModule, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import configuration from './config/configuration';
@@ -10,11 +10,14 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
 import { EmailModule } from './email/email.module';
-
+import {REDIS_CACHE_OPTIONS} from "./infra/redis/redis.config";
 import * as Joi from '@hapi/joi';
 
 @Module({
   imports: [
+    CacheModule.register({
+      ...REDIS_CACHE_OPTIONS
+    }),
     ConfigModule.forRoot({
       load: [configuration],
       validationSchema: Joi.object({
